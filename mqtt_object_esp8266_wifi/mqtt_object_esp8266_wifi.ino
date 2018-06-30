@@ -9,7 +9,8 @@ class Device {
   public:
     byte pin;            // номер вывода
     byte mode = INPUT;  // режим работы
-    DeviceType type;
+    // (используем так как по умолчанию RTTI диактивирован и влечёт большые накладные расходы и нет возможности использовать typeid)
+    DeviceType type;   // ключ для определения типа к которому будем приводить
     const char* name; // Имя устройства
     int state = 0; // Состояние устройства
 };
@@ -30,20 +31,19 @@ class DHT_Sensor : public Device {
     int humidity;
     const char* mqtt_temperature;
     const char* mqtt_humidity;
-    DHT* dht; // Ссылка на экземпляр датчика
-    DHT_Sensor(const char* _name, const char* _mqtt_temperature, const char* _mqtt_humidity,  byte _pin, DHT* _dht);
-//    void sethumidity (int humidity);
+    DHT *dht; // Ссылка на экземпляр датчика
+    DHT_Sensor(const char* _name, const char* _mqtt_temperature, const char* _mqtt_humidity,  byte _pin, DHT *_dht);
 };
 
 class MQTT_Device {
   public:
-    const char* topic_module;
-    const char* topic_room;
-    const char* topic_device;
-    Device device;
-    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Button _device);
-    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Rele _device);
-    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  DHT_Sensor _device);
+    const char* topic_module; // топик с названием модуля
+    const char* topic_room; // топик с именем комнаты
+    const char* topic_device; // топик с названием устройства (кнопка, реле, датчик и.т.д)
+    Device *device; // ссылка на устройство
+    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Button *_device);
+    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Rele *_device);
+    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  DHT_Sensor *_device);
 };
 
 class WiFi_Setting {
@@ -75,7 +75,7 @@ Rele::Rele(const char* _name, byte _pin) {
   mode = OUTPUT;
 }
 
-DHT_Sensor::DHT_Sensor(const char* _name, const char* _mqtt_temperature, const char* _mqtt_humidity, byte _pin, DHT* _dht) {
+DHT_Sensor::DHT_Sensor(const char* _name, const char* _mqtt_temperature, const char* _mqtt_humidity, byte _pin, DHT *_dht) {
   pin = _pin;
   mode = INPUT;
   name = _name;
@@ -85,7 +85,7 @@ DHT_Sensor::DHT_Sensor(const char* _name, const char* _mqtt_temperature, const c
   mqtt_humidity = _mqtt_humidity;
 }
 
-MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Button _device)
+MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Button *_device)
 {
   topic_module = _topic_module;
   topic_room = _topic_room;
@@ -93,7 +93,7 @@ MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, con
   device = _device;
 }
 
-MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Rele _device)
+MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Rele *_device)
 {
   topic_module = _topic_module;
   topic_room = _topic_room;
@@ -101,7 +101,7 @@ MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, con
   device = _device;
 }
 
-MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  DHT_Sensor _device)
+MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  DHT_Sensor *_device)
 {
   topic_module = _topic_module;
   topic_room = _topic_room;
@@ -112,20 +112,36 @@ MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, con
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const char* mqtt_server = "192.168.87.2";
-const char* mqtt_login = "leganas";
-const char* mqtt_password = "kj4cuetd";
+const char* mqtt_server = "192.168.88.253";
+const char* mqtt_login = "";
+const char* mqtt_password = "";
 Vector<MQTT_Device> mqtt_list;
-
-DHT dht_1(D1, DHT11); // Реальный датчик
-MQTT_Device dht1 = {"/esp8266", "/Bathroom", "/dht1", (DHT_Sensor) {"/Датчик температуры и влажности", "/temperature", "/humidity", D1, &dht_1}};
-MQTT_Device btn1 = {"/esp8266", "/Bathroom", "/button1", (Button) {"/Выключатель вентилятор", D0}};
-MQTT_Device btn2 = {"/esp8266", "/Bathroom", "/button2", (Button) {"/Выключатель бойлер", D5}};
-MQTT_Device rele1 = {"/esp8266", "/Bathroom", "/rele1", (Rele) {"/Реле вентилятор", D2}};
-MQTT_Device rele2 = {"/esp8266", "/Bathroom", "/rele2", (Rele) {"/Реле бойлер", D3}};
 
 long lastMsg = 0;
 char msg[50];
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Init device");
+  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/dht1", reinterpret_cast<DHT_Sensor*>(new DHT_Sensor("DHT", "/temperature", "/humidity", D1, new DHT (D1, DHT11)))));
+  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/button1", reinterpret_cast<Button*>(new Button("Выключатель вентилятор", D0))));
+  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/button2", reinterpret_cast<Button*>(new Button("Выключатель бойлер", D5))));
+  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/rele1", reinterpret_cast<Rele*>(new Rele("Реле вентилятор", D2))));
+  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/rele2", reinterpret_cast<Rele*>(new Rele("Реле бойлер", D3))));
+  
+  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
+  for (int i = 0; i < mqtt_list.size(); i++){
+    // тут определяем тип устройства и инициализируем его в зависимости от типа
+    if (mqtt_list[i].device->type == dht_sensor) {
+      DHT_Sensor *dht_device = reinterpret_cast<DHT_Sensor*>(mqtt_list[i].device);
+      dht_device->dht->begin();
+    } else pinMode(mqtt_list[i].device->pin, mqtt_list[i].device->mode);
+  }
+  setup_wifi();
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
 
 const String catStr(const char* str1, const char* str2) {
   char result[512];
@@ -165,8 +181,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   // Ищем топик реле (его будем щёлкать если пришло изменение)
   int releNumber = -1;
   for (int i = 0; i < mqtt_list.size(); i++){
-    if (mqtt_list[i].device.type == rele) {
-      Rele *dev = (Rele*) &mqtt_list[i].device;
+    if (mqtt_list[i].device->type == rele) {
+      Rele *dev = reinterpret_cast<Rele*>(mqtt_list[i].device);
       String base = catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room);
       String dev_name(mqtt_list[i].topic_device);
       if (strcmp(topic,(base + dev_name).c_str())==0) releNumber = i;
@@ -174,8 +190,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     if (releNumber > -1) break;
   }
   if (releNumber > -1) {
-    if ((char)payload[0] == '1' && mqtt_list[releNumber].device.state == 0) swithState(releNumber);
-    if ((char)payload[0] == '0' && mqtt_list[releNumber].device.state == 1) swithState(releNumber);
+    if ((char)payload[0] == '1') setstate(releNumber,1);
+    if ((char)payload[0] == '0') setstate(releNumber,0);
   }
 }
 
@@ -188,10 +204,10 @@ void reconnect() {
     if (client.connect(clientId.c_str(), mqtt_login, mqtt_password)) {
       Serial.println("connected");
       for (int i = 0; i < mqtt_list.size(); i++) {
-        String base = catStr(mqtt_list[i].topic_device, mqtt_list[i].topic_room);
+        String base = catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room);
         Serial.print("Подписываемся на топик : ");
-        Serial.println(catStr(base.c_str(), mqtt_list[i].topic_device).c_str());
-        client.subscribe(catStr(base.c_str(), mqtt_list[i].topic_device).c_str());
+        Serial.println(catStr(base.c_str(),mqtt_list[i].topic_device).c_str());
+        client.subscribe(catStr(base.c_str(),mqtt_list[i].topic_device).c_str());
       }
     } else {
       Serial.print("failed, rc=");
@@ -203,27 +219,6 @@ void reconnect() {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial.println("Init device");
-  mqtt_list.push_back(dht1);
-  mqtt_list.push_back(btn1);
-  mqtt_list.push_back(btn2);
-  mqtt_list.push_back(rele1);
-  mqtt_list.push_back(rele2);
-  
-  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
-  for (int i = 0; i < mqtt_list.size(); i++){
-    if (mqtt_list[i].device.type == dht_sensor) {
-      DHT_Sensor *dev = (DHT_Sensor*) &mqtt_list[i].device;
-      DHT *sensor = (DHT*) &dev;
-      sensor->begin();
-    } else pinMode(mqtt_list[i].device.pin, mqtt_list[i].device.mode);
-  }
-  setup_wifi();
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
-}
 
 void loop() {
 
@@ -234,16 +229,16 @@ void loop() {
 
   // Опрашиваем устройства (и публикуем состояния в MQTT брокера)
   for (int i = 0; i <  mqtt_list.size(); i++) {
-    switch (mqtt_list[i].device.type) {
+    switch (mqtt_list[i].device->type) {
       case button:
       // По состоянию выключателей переключаем реле и за одно передаём их состояние
       // Всё это в Action
       // (как и раньше только передаётся еще и состояние выключателей) 
-      // можно судить будет на стороне Mojordomo кто щёлкнул реле
+      // можно судить будет на стороне Mojordomo кто щёлкнул реле (реальный выключатель или на стороне Mojerdomo программное переключение произошло)
         if (PubButtonState(&mqtt_list[i]) == true) Action(i);
         break;
       case rele:
-      // Постоянно публиковать походу не нужно, дальше разберёмся может добавлю предыдущее состояние реле
+      // Постоянно публиковать походу не нужно, дальше разберёмся может добавлю предыдущее состояние реле и буду публиковать по изменению значения
 //        PubReleState(&mqtt_list[i]);
         break;
       case dht_sensor:
@@ -257,20 +252,29 @@ void loop() {
   }
 }
 
+void setstate(int id, int state) {
+  if (state == 0) {
+    digitalWrite(mqtt_list[id].device->pin,HIGH); 
+    mqtt_list[id].device->state = 0;
+  } else {
+    digitalWrite(mqtt_list[id].device->pin,LOW);
+    mqtt_list[id].device->state = 1;
+  }
+}
+
 // Переключает состояние устройства на противоположное
 int swithState(int id){
-   if (mqtt_list[id].device.state == 0){ 
-    digitalWrite(mqtt_list[id].device.pin,HIGH); 
-    mqtt_list[id].device.state = 1;
+   if (mqtt_list[id].device->state == 0){ 
+    setstate(id,1);
     return 1;
    } else {
-    digitalWrite(mqtt_list[id].device.pin,LOW);
-    mqtt_list[id].device.state = 0;
+    setstate(id,0);
     return 0;
    }
 }
 
 // Некий экшен в качестве ID принемаем номер Device , эта функция всегда специфичная
+// Пока не очень красиво всё привязано к номерам , но некий HashMap я пока хз как реализовать
 void Action(int id){
   switch (id) {
      case 1: // Если был счёлчок button1
@@ -286,7 +290,8 @@ void Action(int id){
 
 // Если состояние Кнопки изменилось публикует это дело в MQTT сеть (и возвращает true если менялось положение)
 boolean PubButtonState(MQTT_Device *mqtt_dev){
-  Button *dev = (Button*) &mqtt_dev->device;
+  MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
+  Button *dev = reinterpret_cast<Button*>(mqttdev->device);
   int current_rele_state = digitalRead(dev->pin);
   if (current_rele_state != dev->state) {
     String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
@@ -294,6 +299,7 @@ boolean PubButtonState(MQTT_Device *mqtt_dev){
     Serial.print("Publish message: ");
     Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
     Serial.println(msg);
+    dev->state = current_rele_state;
     client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
     return true;
   }
@@ -302,7 +308,8 @@ boolean PubButtonState(MQTT_Device *mqtt_dev){
 
 // Публикуем текущее состояние реле
 void PubReleState(MQTT_Device *mqtt_dev){
-  Rele *dev = (Rele*) &mqtt_dev->device;
+  MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
+  Rele *dev = reinterpret_cast<Rele*>(mqttdev->device);
   String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
   snprintf (msg, 75, "%ld", dev->state);
   Serial.print("Publish message: ");
@@ -313,30 +320,27 @@ void PubReleState(MQTT_Device *mqtt_dev){
 
 // Публикует информацию от датчика температуры и влажности
 void dht_sensor_pub(MQTT_Device *mqtt_dev){
-  DHT_Sensor *dev = (DHT_Sensor*) &mqtt_dev->device;
-  DHT *sensor = (DHT*) &dev;
+  MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
+  DHT_Sensor *dev = reinterpret_cast<DHT_Sensor*>(mqttdev->device);
+  DHT *sensor = dev->dht;
+  
   dev->humidity = sensor->readHumidity();
   if (dev->humidity <= 100) {
-    String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+    String base = catStr(mqttdev->topic_module,mqttdev->topic_room);
     snprintf (msg, 75, "%ld", dev->humidity);
+    base = base + catStr(mqttdev->topic_device,dev->mqtt_humidity);
     Serial.print("Publish message: ");
-    String dev_name(mqtt_dev->topic_device);
-    base = base+dev_name;
-    Serial.println(catStr(base.c_str(),dev->mqtt_humidity).c_str());
-    Serial.println(msg);
-    String base_device();
-    client.publish(catStr(base.c_str(),dev->mqtt_humidity).c_str(), msg);
+    Serial.print(base.c_str());Serial.print(" : ");Serial.println(msg);
+    client.publish(base.c_str(), msg);
   }
   dev->temperature = sensor->readTemperature();
   if (dev->temperature <= 100) {
-    String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+    String base = catStr(mqttdev->topic_module,mqttdev->topic_room);
     snprintf (msg, 75, "%ld", dev->temperature);
+    base = base + catStr(mqttdev->topic_device,dev->mqtt_temperature);
     Serial.print("Publish message: ");
-    String dev_name(mqtt_dev->topic_device);
-    base = base+dev_name;
-    Serial.println(catStr(base.c_str(),dev->mqtt_temperature).c_str());
-    Serial.println(msg);
-    client.publish(catStr(base.c_str(),dev->mqtt_temperature).c_str(), msg);
+    Serial.print(base.c_str());Serial.print(" : ");Serial.println(msg);
+    client.publish(base.c_str(), msg);
   }
 }
 
