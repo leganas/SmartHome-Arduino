@@ -100,10 +100,10 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB port only
   }
   Serial.println("Init device");
-  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/button1", reinterpret_cast<Button*>(new Button("Выключатель 1", 11))));
-  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/button2", reinterpret_cast<Button*>(new Button("Выключатель 2", 12))));
-  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/rele1", reinterpret_cast<Rele*>(new Rele("Реле 1", 13))));
-  mqtt_list.push_back(MQTT_Device("/esp8266", "/Bathroom", "/rele2", reinterpret_cast<Rele*>(new Rele("Реле 2", 14))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/button1", reinterpret_cast<Button*>(new Button("Выключатель 1", 11))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/button2", reinterpret_cast<Button*>(new Button("Выключатель 2", 12))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/rele1", reinterpret_cast<Rele*>(new Rele("Реле 1", 13))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/rele2", reinterpret_cast<Rele*>(new Rele("Реле 2", 14))));
   
 //  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
   for (int i = 0; i < mqtt_list.size(); i++){
@@ -227,13 +227,13 @@ int swithState(int id){
 // Пока не очень красиво всё привязано к номерам , но некий HashMap я пока хз как реализовать
 void Action(int id){
   switch (id) {
-     case 1: // Если был счёлчок button1
+     case 0: // Если был счёлчок button1
+         swithState(2);
+         PubReleState(&mqtt_list[2]);
+     break;
+     case 1: // Если был счёлчок button2
          swithState(3);
          PubReleState(&mqtt_list[3]);
-     break;
-     case 2: // Если был счёлчок button2
-         swithState(4);
-         PubReleState(&mqtt_list[4]);
      break;
   }
 }
