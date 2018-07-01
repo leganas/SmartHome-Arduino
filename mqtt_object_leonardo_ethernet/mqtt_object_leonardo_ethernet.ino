@@ -2,7 +2,7 @@
 #include <Vector.h>
 #include <PubSubClient.h>
 
-enum DeviceType {button, rele};
+enum DeviceType {presenceDetector,button, rele};
 
 class Device {
   public:
@@ -14,8 +14,14 @@ class Device {
     int state = 0; // Состояние устройства
 };
 
+class PresenceDetector: public Device {
+  public:
+    PresenceDetector(const char* _name, byte _pin);
+};
+
 class Button : public Device {
   public:
+    int tickAntiBounce = 0; // Счётчик итераций для реализации анти дребезга кнопки
     Button(const char* _name, byte _pin);
 };
 
@@ -30,6 +36,7 @@ class MQTT_Device {
     const char* topic_room; // топик с именем комнаты
     const char* topic_device; // топик с названием устройства (кнопка, реле, датчик и.т.д)
     Device *device; // ссылка на устройство
+    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  PresenceDetector *_device);
     MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Button *_device);
     MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Rele *_device);
 };
@@ -47,6 +54,14 @@ WiFi_Setting::WiFi_Setting(const char* _ssid, const char* _password) {
   password = _password;
 };
 
+PresenceDetector::PresenceDetector(const char* _name, byte _pin) {
+  name = _name;
+  state = 0;
+  type = presenceDetector;
+  pin = _pin;
+  mode = INPUT;
+}
+
 Button::Button(const char* _name, byte _pin) {
   name = _name;
   state = 0;
@@ -62,6 +77,15 @@ Rele::Rele(const char* _name, byte _pin) {
   pin = _pin;
   mode = OUTPUT;
 }
+
+MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  PresenceDetector *_device)
+{
+  topic_module = _topic_module;
+  topic_room = _topic_room;
+  topic_device = _topic_device;
+  device = _device;
+}
+
 
 MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Button *_device)
 {
@@ -91,6 +115,8 @@ const char* mqtt_login = "";
 const char* mqtt_password = "";
 Vector<MQTT_Device> mqtt_list;
 
+const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для сробатывания кнопки
+
 long lastMsg = 0;
 char msg[50];
 
@@ -100,10 +126,15 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB port only
   }
   Serial.println("Init device");
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/button1", reinterpret_cast<Button*>(new Button("Выключатель 1", 11))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/button2", reinterpret_cast<Button*>(new Button("Выключатель 2", 12))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/rele1", reinterpret_cast<Rele*>(new Rele("Реле 1", 13))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bathroom", "/rele2", reinterpret_cast<Rele*>(new Rele("Реле 2", 14))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/PresenceDetector", reinterpret_cast<PresenceDetector*>(new PresenceDetector("PD", 20))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/button1", reinterpret_cast<Button*>(new Button("LivingroomBtn-1", 11))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/button2", reinterpret_cast<Button*>(new Button("LivingroomBtn-2", 12))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/button1", reinterpret_cast<Button*>(new Button("HallBtn", 13))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bedroom", "/button1", reinterpret_cast<Button*>(new Button("BedroomBtn", 14))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/rele1", reinterpret_cast<Rele*>(new Rele("HallRele", 15))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/rele1", reinterpret_cast<Rele*>(new Rele("LivingroomRele-1", 16))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/rele2", reinterpret_cast<Rele*>(new Rele("LivingroomRele-2", 17))));
+  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bedroom", "/rele1", reinterpret_cast<Rele*>(new Rele("BedroomRele", 18))));
   
 //  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
   for (int i = 0; i < mqtt_list.size(); i++){
@@ -187,6 +218,10 @@ void loop() {
   // Опрашиваем устройства (и публикуем состояния в MQTT брокера)
   for (int i = 0; i <  mqtt_list.size(); i++) {
     switch (mqtt_list[i].device->type) {
+      case presenceDetector:
+        // Публикуем состояние датчика движения если оно меняется
+        PubPresenceDetectorState(&mqtt_list[i]);
+        break;
       case button:
       // По состоянию выключателей переключаем реле и за одно передаём их состояние
       // Всё это в Action
@@ -238,10 +273,33 @@ void Action(int id){
   }
 }
 
-// Если состояние Кнопки изменилось публикует это дело в MQTT сеть (и возвращает true если менялось положение)
+// Если состояние Кнопки изменилось (и прошло 1000 тиков анти дребезга) публикует это дело в MQTT сеть (и возвращает true если менялось положение)
 boolean PubButtonState(MQTT_Device *mqtt_dev){
   MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
   Button *dev = reinterpret_cast<Button*>(mqttdev->device);
+  int current_rele_state = digitalRead(dev->pin);
+  if (current_rele_state != dev->state) {
+    if (dev->tickAntiBounce < MaxTickAntiBounce) {
+      dev->tickAntiBounce++;
+    } else {
+      String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+      snprintf (msg, 75, "%ld", dev->state);
+      Serial.print("Publish message: ");
+      Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
+      Serial.println(msg);
+      dev->state = current_rele_state;
+      dev->tickAntiBounce = 0;
+      client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
+      return true;
+    }
+  } else dev->tickAntiBounce = 0;
+  return false;
+}
+
+// Если состояние датчика движения изменилось то публикуем в сеть
+boolean PubPresenceDetectorState(MQTT_Device *mqtt_dev){
+  MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
+  PresenceDetector *dev = reinterpret_cast<PresenceDetector*>(mqttdev->device);
   int current_rele_state = digitalRead(dev->pin);
   if (current_rele_state != dev->state) {
     String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
@@ -255,6 +313,7 @@ boolean PubButtonState(MQTT_Device *mqtt_dev){
   }
   return false;
 }
+
 
 // Публикуем текущее состояние реле
 void PubReleState(MQTT_Device *mqtt_dev){

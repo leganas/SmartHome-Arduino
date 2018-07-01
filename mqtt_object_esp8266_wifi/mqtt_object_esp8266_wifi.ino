@@ -17,6 +17,7 @@ class Device {
 
 class Button : public Device {
   public:
+    int tickAntiBounce = 0; // Счётчик итераций для реализации анти дребезга кнопки
     Button(const char* _name, byte _pin);
 };
 
@@ -116,6 +117,8 @@ const char* mqtt_server = "192.168.88.253";
 const char* mqtt_login = "";
 const char* mqtt_password = "";
 Vector<MQTT_Device> mqtt_list;
+
+const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для сробатывания кнопки
 
 long lastMsg = 0;
 char msg[50];
@@ -288,21 +291,26 @@ void Action(int id){
   }
 }
 
-// Если состояние Кнопки изменилось публикует это дело в MQTT сеть (и возвращает true если менялось положение)
+// Если состояние Кнопки изменилось (и прошло 1000 тиков анти дребезга) публикует это дело в MQTT сеть (и возвращает true если менялось положение)
 boolean PubButtonState(MQTT_Device *mqtt_dev){
   MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
   Button *dev = reinterpret_cast<Button*>(mqttdev->device);
   int current_rele_state = digitalRead(dev->pin);
   if (current_rele_state != dev->state) {
-    String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
-    snprintf (msg, 75, "%ld", dev->state);
-    Serial.print("Publish message: ");
-    Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
-    Serial.println(msg);
-    dev->state = current_rele_state;
-    client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
-    return true;
-  }
+    if (dev->tickAntiBounce < MaxTickAntiBounce) {
+      dev->tickAntiBounce++;
+    } else {
+      String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+      snprintf (msg, 75, "%ld", dev->state);
+      Serial.print("Publish message: ");
+      Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
+      Serial.println(msg);
+      dev->state = current_rele_state;
+      dev->tickAntiBounce = 0;
+      client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
+      return true;
+    }
+  } else dev->tickAntiBounce = 0;
   return false;
 }
 
