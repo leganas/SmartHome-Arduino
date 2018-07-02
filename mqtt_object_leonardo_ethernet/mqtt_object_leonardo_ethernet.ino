@@ -35,19 +35,6 @@ class MQTT_Device {
     MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Rele *_device);
 };
 
-class WiFi_Setting {
-  public:
-    const char* ssid;
-    const char* password;
-
-    WiFi_Setting(const char* ssid, const char* password);
-};
-
-WiFi_Setting::WiFi_Setting(const char* _ssid, const char* _password) {
-  ssid = _ssid;
-  password = _password;
-};
-
 Button::Button(byte _pin) {
   state = 0;
   type = button;
