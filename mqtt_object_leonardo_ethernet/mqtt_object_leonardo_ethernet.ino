@@ -83,7 +83,7 @@ Vector<MQTT_Device> mqtt_list;
 const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для срабатывания кнопки
 
 long lastMsg = 0;
-char msg[50];
+char msg[16];
 
 void setup() {
   Serial.begin(115200);
@@ -94,12 +94,12 @@ void setup() {
   mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/button1", reinterpret_cast<Button*>(new Button(2))));
   mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/button2", reinterpret_cast<Button*>(new Button(3))));
   mqtt_list.push_back(MQTT_Device("/leo", "/Hall", "/button1", reinterpret_cast<Button*>(new Button(4))));
-//  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/button1", reinterpret_cast<Button*>(new Button(5))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/button1", reinterpret_cast<Button*>(new Button(5))));
 
-//  mqtt_list.push_back(MQTT_Device("/leo", "/Hall", "/rele1", reinterpret_cast<Rele*>(new Rele(6))));
-//  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele1", reinterpret_cast<Rele*>(new Rele(7))));
-//  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele2", reinterpret_cast<Rele*>(new Rele(8))));
-//  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/rele1", reinterpret_cast<Rele*>(new Rele(9))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Hall", "/rele1", reinterpret_cast<Rele*>(new Rele(6))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele1", reinterpret_cast<Rele*>(new Rele(7))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele2", reinterpret_cast<Rele*>(new Rele(8))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/rele1", reinterpret_cast<Rele*>(new Rele(9))));
   
   Serial.println(memoryFree());
 //  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
@@ -114,10 +114,9 @@ void setup() {
 
 
 const String catStr(const char* str1, const char* str2) {
-  char result[512];
+  char result[50];
   snprintf(result, sizeof result, "%s%s", str1, str2);
-  String str = result;
-  return str;
+  return String (result);
 }
 
 void setup_ethernet() {
