@@ -118,7 +118,7 @@ const char* mqtt_login = "";
 const char* mqtt_password = "";
 Vector<MQTT_Device> mqtt_list;
 
-const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для сробатывания кнопки
+const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для срабатывания кнопки
 
 long lastMsg = 0;
 char msg[50];

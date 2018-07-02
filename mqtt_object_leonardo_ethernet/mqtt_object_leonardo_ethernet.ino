@@ -1,3 +1,4 @@
+#include <SPI.h>
 #include <UIPEthernet.h>
 #include <Vector.h>
 #include <PubSubClient.h>
@@ -10,24 +11,18 @@ class Device {
     byte mode = INPUT;  // режим работы
     // (используем так как по умолчанию RTTI диактивирован и влечёт большые накладные расходы и нет возможности использовать typeid)
     DeviceType type;   // ключ для определения типа к которому будем приводить
-    const char* name; // Имя устройства
     int state = 0; // Состояние устройства
-};
-
-class PresenceDetector: public Device {
-  public:
-    PresenceDetector(const char* _name, byte _pin);
 };
 
 class Button : public Device {
   public:
     int tickAntiBounce = 0; // Счётчик итераций для реализации анти дребезга кнопки
-    Button(const char* _name, byte _pin);
+    Button(byte _pin);
 };
 
 class Rele : public Device {
   public:
-    Rele(const char* _name, byte _pin);
+    Rele(byte _pin);
 };
 
 class MQTT_Device {
@@ -36,7 +31,6 @@ class MQTT_Device {
     const char* topic_room; // топик с именем комнаты
     const char* topic_device; // топик с названием устройства (кнопка, реле, датчик и.т.д)
     Device *device; // ссылка на устройство
-    MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  PresenceDetector *_device);
     MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Button *_device);
     MQTT_Device(const char* _topic_module, const char* _topic_room,  const char* _topic_device,  Rele *_device);
 };
@@ -54,38 +48,19 @@ WiFi_Setting::WiFi_Setting(const char* _ssid, const char* _password) {
   password = _password;
 };
 
-PresenceDetector::PresenceDetector(const char* _name, byte _pin) {
-  name = _name;
-  state = 0;
-  type = presenceDetector;
-  pin = _pin;
-  mode = INPUT;
-}
-
-Button::Button(const char* _name, byte _pin) {
-  name = _name;
+Button::Button(byte _pin) {
   state = 0;
   type = button;
   pin = _pin;
   mode = INPUT;
 }
 
-Rele::Rele(const char* _name, byte _pin) {
-  name = _name;
+Rele::Rele(byte _pin) {
   state = 0;
   type = rele;
   pin = _pin;
   mode = OUTPUT;
 }
-
-MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  PresenceDetector *_device)
-{
-  topic_module = _topic_module;
-  topic_room = _topic_room;
-  topic_device = _topic_device;
-  device = _device;
-}
-
 
 MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, const char* _topic_device,  Button *_device)
 {
@@ -104,18 +79,21 @@ MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, con
 }
 
 // определяем конфигурацию сети
-byte mac[] = {0xAE, 0xB2, 0x26, 0xE4, 0x4A, 0x5C}; // MAC-адрес
-byte ip [] = {192, 168, 88, 120};
+uint8_t mac [6] = {0x00,0x01,0x02,0x03,0x04,0x05};
+byte ip[] = {192, 168, 88, 120}; // IP-адрес
+byte myDns[] = {192, 168, 88, 1}; // адрес DNS-сервера
+byte gateway[] = {192, 168, 88, 1}; // адрес сетевого шлюза
+byte subnet[] = {255, 255, 255, 0}; // маска подсети
 
 EthernetClient ethClient; // объект клиент
-PubSubClient client(ethClient);
+PubSubClient client;
 
 const char* mqtt_server = "192.168.88.253";
 const char* mqtt_login = "";
 const char* mqtt_password = "";
 Vector<MQTT_Device> mqtt_list;
 
-const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для сробатывания кнопки
+const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для срабатывания кнопки
 
 long lastMsg = 0;
 char msg[50];
@@ -126,21 +104,23 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB port only
   }
   Serial.println("Init device");
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/PresenceDetector", reinterpret_cast<PresenceDetector*>(new PresenceDetector("PD", 20))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/button1", reinterpret_cast<Button*>(new Button("LivingroomBtn-1", 11))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/button2", reinterpret_cast<Button*>(new Button("LivingroomBtn-2", 12))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/button1", reinterpret_cast<Button*>(new Button("HallBtn", 13))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bedroom", "/button1", reinterpret_cast<Button*>(new Button("BedroomBtn", 14))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Hall", "/rele1", reinterpret_cast<Rele*>(new Rele("HallRele", 15))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/rele1", reinterpret_cast<Rele*>(new Rele("LivingroomRele-1", 16))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Livingroom", "/rele2", reinterpret_cast<Rele*>(new Rele("LivingroomRele-2", 17))));
-  mqtt_list.push_back(MQTT_Device("/leonardo", "/Bedroom", "/rele1", reinterpret_cast<Rele*>(new Rele("BedroomRele", 18))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/button1", reinterpret_cast<Button*>(new Button(2))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/button2", reinterpret_cast<Button*>(new Button(3))));
+  mqtt_list.push_back(MQTT_Device("/leo", "/Hall", "/button1", reinterpret_cast<Button*>(new Button(4))));
+//  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/button1", reinterpret_cast<Button*>(new Button(5))));
+
+//  mqtt_list.push_back(MQTT_Device("/leo", "/Hall", "/rele1", reinterpret_cast<Rele*>(new Rele(6))));
+//  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele1", reinterpret_cast<Rele*>(new Rele(7))));
+//  mqtt_list.push_back(MQTT_Device("/leo", "/Livingroom", "/rele2", reinterpret_cast<Rele*>(new Rele(8))));
+//  mqtt_list.push_back(MQTT_Device("/leo", "/Bedroom", "/rele1", reinterpret_cast<Rele*>(new Rele(9))));
   
+  Serial.println(memoryFree());
 //  pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
   for (int i = 0; i < mqtt_list.size(); i++){
     pinMode(mqtt_list[i].device->pin, mqtt_list[i].device->mode);
   }
   setup_ethernet();
+  ethClient.setTimeout(10000);
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 }
@@ -154,11 +134,14 @@ const String catStr(const char* str1, const char* str2) {
 }
 
 void setup_ethernet() {
-  Ethernet.begin(mac,ip); // инициализация контроллера
+  Ethernet.begin(mac, ip, myDns, gateway, subnet); // инициализация контроллера
+  Serial.print("My address:");
+  Serial.println(Ethernet.localIP()); // выводим IP-адрес контроллера
+  client.setClient (ethClient);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
+  Serial.print("Message [");
   Serial.print(topic);
   Serial.print("] ");
   for (int i = 0; i < length; i++) {
@@ -171,9 +154,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   for (int i = 0; i < mqtt_list.size(); i++){
     if (mqtt_list[i].device->type == rele) {
       Rele *dev = reinterpret_cast<Rele*>(mqtt_list[i].device);
-      String base = catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room);
       String dev_name(mqtt_list[i].topic_device);
-      if (strcmp(topic,(base + dev_name).c_str())==0) releNumber = i;
+      if (strcmp(topic,(catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room) + dev_name).c_str())==0) releNumber = i;
     }
     if (releNumber > -1) break;
   }
@@ -187,26 +169,42 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "ESP8266Client-";
+    String clientId = "LeonardoClient-";
     clientId += String(random(0xffff), HEX);
     if (client.connect(clientId.c_str(), mqtt_login, mqtt_password)) {
       Serial.println("connected");
       for (int i = 0; i < mqtt_list.size(); i++) {
-        String base = catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room);
-        Serial.print("Подписываемся на топик : ");
-        Serial.println(catStr(base.c_str(),mqtt_list[i].topic_device).c_str());
-        client.subscribe(catStr(base.c_str(),mqtt_list[i].topic_device).c_str());
+//        String base = catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room);
+        Serial.print("Topic add:");
+        Serial.println(catStr(catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room).c_str(),mqtt_list[i].topic_device).c_str());
+        client.subscribe(catStr(catStr(mqtt_list[i].topic_module,mqtt_list[i].topic_room).c_str(),mqtt_list[i].topic_device).c_str());
       }
+      Serial.println(memoryFree());
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.println(" try again in 5 sec");
       // Wait 5 seconds before retrying
       delay(5000);
     }
   }
 }
 
+// Переменные, создаваемые процессом сборки,
+// когда компилируется скетч
+extern int __bss_end;
+extern void *__brkval;
+
+// Функция, возвращающая количество свободного ОЗУ (RAM)
+int memoryFree()
+{
+   int freeValue;
+   if((int)__brkval == 0)
+      freeValue = ((int)&freeValue) - ((int)&__bss_end);
+   else
+      freeValue = ((int)&freeValue) - ((int)__brkval);
+   return freeValue;
+}
 
 void loop() {
 
@@ -218,10 +216,6 @@ void loop() {
   // Опрашиваем устройства (и публикуем состояния в MQTT брокера)
   for (int i = 0; i <  mqtt_list.size(); i++) {
     switch (mqtt_list[i].device->type) {
-      case presenceDetector:
-        // Публикуем состояние датчика движения если оно меняется
-        PubPresenceDetectorState(&mqtt_list[i]);
-        break;
       case button:
       // По состоянию выключателей переключаем реле и за одно передаём их состояние
       // Всё это в Action
@@ -231,7 +225,7 @@ void loop() {
         break;
       case rele:
       // Постоянно публиковать походу не нужно, дальше разберёмся может добавлю предыдущее состояние реле и буду публиковать по изменению значения
-//        PubReleState(&mqtt_list[i]);
+//       PubReleState(&mqtt_list[i]);
         break;
     }
   }
@@ -261,19 +255,19 @@ int swithState(int id){
 // Некий экшен в качестве ID принемаем номер Device , эта функция всегда специфичная
 // Пока не очень красиво всё привязано к номерам , но некий HashMap я пока хз как реализовать
 void Action(int id){
-  switch (id) {
-     case 0: // Если был счёлчок button1
-         swithState(2);
-         PubReleState(&mqtt_list[2]);
+/*  switch (id) {
+     case 0: 
+         swithState(5);
+         PubReleState(&mqtt_list[5]);
      break;
-     case 1: // Если был счёлчок button2
-         swithState(3);
-         PubReleState(&mqtt_list[3]);
+     case 1: 
+         swithState(6);
+         PubReleState(&mqtt_list[6]);
      break;
-  }
+  }*/
 }
 
-// Если состояние Кнопки изменилось (и прошло 1000 тиков анти дребезга) публикует это дело в MQTT сеть (и возвращает true если менялось положение)
+// Если состояние Кнопки изменилось (и прошло MaxTickAntiBounce тиков анти дребезга) публикует это дело в MQTT сеть (и возвращает true если менялось положение)
 boolean PubButtonState(MQTT_Device *mqtt_dev){
   MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
   Button *dev = reinterpret_cast<Button*>(mqttdev->device);
@@ -282,48 +276,29 @@ boolean PubButtonState(MQTT_Device *mqtt_dev){
     if (dev->tickAntiBounce < MaxTickAntiBounce) {
       dev->tickAntiBounce++;
     } else {
-      String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+//      String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
       snprintf (msg, 75, "%ld", dev->state);
-      Serial.print("Publish message: ");
-      Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
-      Serial.println(msg);
+//      Serial.print("Publish message: ");
+//      Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
+//      Serial.println(msg);
       dev->state = current_rele_state;
       dev->tickAntiBounce = 0;
-      client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
+      client.publish(catStr(catStr(mqtt_dev->topic_module,mqtt_dev->topic_room).c_str(),mqtt_dev->topic_device).c_str(), msg);
       return true;
     }
   } else dev->tickAntiBounce = 0;
   return false;
 }
 
-// Если состояние датчика движения изменилось то публикуем в сеть
-boolean PubPresenceDetectorState(MQTT_Device *mqtt_dev){
-  MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
-  PresenceDetector *dev = reinterpret_cast<PresenceDetector*>(mqttdev->device);
-  int current_rele_state = digitalRead(dev->pin);
-  if (current_rele_state != dev->state) {
-    String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
-    snprintf (msg, 75, "%ld", dev->state);
-    Serial.print("Publish message: ");
-    Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
-    Serial.println(msg);
-    dev->state = current_rele_state;
-    client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
-    return true;
-  }
-  return false;
-}
-
-
 // Публикуем текущее состояние реле
 void PubReleState(MQTT_Device *mqtt_dev){
   MQTT_Device *mqttdev = reinterpret_cast<MQTT_Device*>(mqtt_dev);
   Rele *dev = reinterpret_cast<Rele*>(mqttdev->device);
-  String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
+//  String base = catStr(mqtt_dev->topic_module,mqtt_dev->topic_room);
   snprintf (msg, 75, "%ld", dev->state);
-  Serial.print("Publish message: ");
-  Serial.print(catStr(base.c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
-  Serial.println(msg);
-  client.publish(catStr(base.c_str(),mqtt_dev->topic_device).c_str(), msg);
+//  Serial.print("Publish message: ");
+//  Serial.print(catStr(catStr(mqtt_dev->topic_module,mqtt_dev->topic_room).c_str(),mqtt_dev->topic_device).c_str()); Serial.print(" - ");
+//  Serial.println(msg);
+  client.publish(catStr(catStr(mqtt_dev->topic_module,mqtt_dev->topic_room).c_str(),mqtt_dev->topic_device).c_str(), msg);
 }
 
