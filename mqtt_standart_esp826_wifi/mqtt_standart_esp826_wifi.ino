@@ -5,7 +5,7 @@
 // Update these with rele_states suitable for your network.
 const char* ssid = "LS_AP";
 const char* password = "foreverls";
-const char* mqtt_server = "192.168.87.2";
+const char* mqtt_server = "192.168.88.199";
 const char* mqtt_login = "leganas";
 const char* mqtt_password = "kj4cuetd";
 WiFiClient espClient;

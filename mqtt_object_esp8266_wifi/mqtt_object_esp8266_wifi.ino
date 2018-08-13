@@ -113,9 +113,9 @@ MQTT_Device::MQTT_Device(const char* _topic_module, const char* _topic_room, con
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-const char* mqtt_server = "192.168.88.253";
-const char* mqtt_login = "";
-const char* mqtt_password = "";
+const char* mqtt_server = "192.168.88.199";
+const char* mqtt_login = "leganas";
+const char* mqtt_password = "kj4cuetd";
 Vector<MQTT_Device> mqtt_list;
 
 const int MaxTickAntiBounce = 5000; // Количесто тиков антидребезга для срабатывания кнопки
